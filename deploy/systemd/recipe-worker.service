@@ -1,0 +1,16 @@
+[Unit]
+Description=Recipe Scraper Platform - Celery worker
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=recipe
+Group=recipe
+WorkingDirectory=/opt/scraper
+EnvironmentFile=/opt/scraper/.env
+ExecStart=/opt/scraper/venv/bin/celery -A scraper.worker worker --loglevel=info
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

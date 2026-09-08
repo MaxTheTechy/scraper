@@ -1,0 +1,16 @@
+[Unit]
+Description=Recipe Scraper Platform - FastAPI
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=recipe
+Group=recipe
+WorkingDirectory=/opt/scraper
+EnvironmentFile=/opt/scraper/.env
+ExecStart=/opt/scraper/venv/bin/uvicorn api.main:app --app-dir /opt/scraper --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
