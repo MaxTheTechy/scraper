@@ -10,18 +10,15 @@ const STATUS_CLASS: Record<string, string> = {
   pending: styles.statusPending,
   approved: styles.statusApproved,
   rejected: styles.statusRejected,
+  duplicate: styles.statusDuplicate,
 }
 
 export function RecipeReviewPanel() {
-  const recipesQuery = useRecipesQuery()
-  // GET /recipes has no status filter param, so we filter the returned list
-  // client-side, defaulting to "pending" (the review queue).
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending')
+  const recipesQuery = useRecipesQuery(statusFilter === 'all' ? undefined : statusFilter)
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
-  const recipes = recipesQuery.data ?? []
-  const filtered =
-    statusFilter === 'all' ? recipes : recipes.filter((r) => r.status === statusFilter)
+  const filtered = recipesQuery.data ?? []
 
   return (
     <section>
@@ -38,6 +35,7 @@ export function RecipeReviewPanel() {
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
+              <option value="duplicate">Duplicates</option>
               <option value="all">All</option>
             </select>
           </div>

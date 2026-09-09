@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     scrape_rate_limit_min_seconds: float = 2
     scrape_rate_limit_max_seconds: float = 5
     scrape_user_agent: str = "RecipeScraperBot/0.1"
+    scrape_schedule_cron: str = "0 3 * * *"
+    scrape_default_auto_limit: int = 20
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

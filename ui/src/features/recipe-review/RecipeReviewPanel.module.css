@@ -74,6 +74,10 @@
   color: #b3261e;
 }
 
+.statusDuplicate {
+  color: #8250df;
+}
+
 .error {
   color: #b3261e;
   font-size: 0.85rem;

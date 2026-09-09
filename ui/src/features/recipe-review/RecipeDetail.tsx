@@ -83,6 +83,13 @@ export function RecipeDetail({ recipeId }: RecipeDetailProps) {
             )}
           </div>
 
+          {recipe.status === 'duplicate' && recipe.duplicate_of_id != null && (
+            <p className={styles.notice}>
+              Flagged as a duplicate of recipe #{recipe.duplicate_of_id} (matched by title/ingredient
+              similarity — see scraper/dedup.py). If this is wrong, mark it "Not a duplicate" below.
+            </p>
+          )}
+
           <div className={styles.actions}>
             <button
               type="button"
@@ -100,6 +107,23 @@ export function RecipeDetail({ recipeId }: RecipeDetailProps) {
             >
               Reject
             </button>
+            {recipe.status === 'duplicate' ? (
+              <button
+                type="button"
+                disabled={updateStatus.isPending}
+                onClick={() => updateStatus.mutate({ id: recipe.id, payload: { status: 'pending' } })}
+              >
+                Not a duplicate
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={updateStatus.isPending}
+                onClick={() => updateStatus.mutate({ id: recipe.id, payload: { status: 'duplicate' } })}
+              >
+                Mark as duplicate
+              </button>
+            )}
           </div>
           {updateStatus.isError && (
             <p className={styles.error}>

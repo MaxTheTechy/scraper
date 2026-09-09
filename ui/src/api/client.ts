@@ -11,6 +11,7 @@ import type {
   ScrapeTriggerResponse,
   Site,
   SiteCreate,
+  SiteUpdate,
 } from './types'
 
 const BASE = '/api'
@@ -50,8 +51,20 @@ export function createSite(payload: SiteCreate): Promise<Site> {
   })
 }
 
-export function triggerScrape(siteId: number): Promise<ScrapeTriggerResponse> {
-  return request<ScrapeTriggerResponse>(`/sites/${siteId}/scrape`, {
+export function updateSite(id: number, payload: SiteUpdate): Promise<Site> {
+  return request<Site>(`/sites/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteSite(id: number): Promise<void> {
+  return request<void>(`/sites/${id}`, { method: 'DELETE' })
+}
+
+export function triggerScrape(siteId: number, limit?: number): Promise<ScrapeTriggerResponse> {
+  const qs = limit != null ? `?limit=${limit}` : ''
+  return request<ScrapeTriggerResponse>(`/sites/${siteId}/scrape${qs}`, {
     method: 'POST',
   })
 }
@@ -67,6 +80,7 @@ export function fetchScrapeJobs(): Promise<ScrapeJobsResponse> {
 export interface ListRecipesParams {
   cuisine?: string
   tag?: string
+  status?: string
   limit?: number
   offset?: number
 }
@@ -75,6 +89,7 @@ export function fetchRecipes(params: ListRecipesParams = {}): Promise<RecipeList
   const search = new URLSearchParams()
   if (params.cuisine) search.set('cuisine', params.cuisine)
   if (params.tag) search.set('tag', params.tag)
+  if (params.status) search.set('status', params.status)
   if (params.limit != null) search.set('limit', String(params.limit))
   if (params.offset != null) search.set('offset', String(params.offset))
   const qs = search.toString()
@@ -92,11 +107,12 @@ export function searchRecipes(q: string, limit = 50, offset = 0): Promise<Recipe
   })
 }
 
-// Approve/reject only — the backend's PATCH /recipes/{id}/status endpoint
-// (api/schemas/recipe.py: RecipeStatusUpdate) accepts nothing but
-// {"status": "approved" | "rejected"}. There is no content-editing endpoint
-// yet, so this client intentionally does not expose one — see the TODO in
-// features/recipe-review/RecipeDetail.tsx.
+// Status-only — the backend's PATCH /recipes/{id}/status endpoint
+// (api/schemas/recipe.py: RecipeStatusUpdate) accepts
+// {"status": "pending" | "approved" | "rejected" | "duplicate"}, used both
+// for approve/reject and for reclassifying a flagged duplicate. There is no
+// content-editing endpoint yet, so this client intentionally does not
+// expose one — see the TODO in features/recipe-review/RecipeDetail.tsx.
 export function updateRecipeStatus(id: number, payload: RecipeStatusUpdate): Promise<Recipe> {
   return request<Recipe>(`/recipes/${id}/status`, {
     method: 'PATCH',

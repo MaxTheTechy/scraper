@@ -4,13 +4,13 @@ import type { RecipeStatusUpdate } from '../../api/types'
 
 const RECIPES_KEY = ['recipes'] as const
 
-// GET /recipes has no status filter param (api/routers/recipes.py only
-// supports cuisine/tag/limit/offset) — fetch a reasonably large page and
-// filter by status client-side, as instructed by the task brief.
-export function useRecipesQuery() {
+// GET /recipes?status= filters server-side (api/routers/recipes.py) so a
+// dedicated view (e.g. "duplicate") doesn't have to fetch every recipe row
+// as the dataset grows with multi-site scraping.
+export function useRecipesQuery(status?: string) {
   return useQuery({
-    queryKey: RECIPES_KEY,
-    queryFn: () => fetchRecipes({ limit: 200 }),
+    queryKey: [...RECIPES_KEY, status ?? 'all'],
+    queryFn: () => fetchRecipes({ limit: 200, status }),
   })
 }
 

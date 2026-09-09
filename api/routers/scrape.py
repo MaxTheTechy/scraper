@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from api.celery_app import celery_app
@@ -15,12 +15,17 @@ SCRAPE_SITE_TASK_NAME = "scraper.worker.scrape_site"
 
 
 @router.post("/sites/{site_id}/scrape", status_code=202)
-def trigger_scrape(site_id: int, db: Session = Depends(get_db)):
+def trigger_scrape(
+    site_id: int,
+    limit: int | None = Query(default=None, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
     site = db.get(Site, site_id)
     if site is None:
         raise HTTPException(status_code=404, detail="Site not found")
 
-    result = celery_app.send_task(SCRAPE_SITE_TASK_NAME, args=[site_id])
+    args = [site_id] if limit is None else [site_id, limit]
+    result = celery_app.send_task(SCRAPE_SITE_TASK_NAME, args=args)
     return {"task_id": result.id, "site_id": site_id, "status": "queued"}
 
 

@@ -2,7 +2,7 @@
 // field names are kept as-is (snake_case) per the frontend-ui skill
 // convention: don't relabel backend fields in the UI layer.
 
-export type RecipeStatus = 'pending' | 'approved' | 'rejected'
+export type RecipeStatus = 'pending' | 'approved' | 'rejected' | 'duplicate'
 
 export interface Site {
   id: number
@@ -10,12 +10,18 @@ export interface Site {
   name: string | null
   enabled: boolean
   last_scraped: string | null
+  consecutive_failures: number
   created_at: string
 }
 
 export interface SiteCreate {
   url: string
   name?: string | null
+}
+
+export interface SiteUpdate {
+  enabled?: boolean
+  name?: string
 }
 
 export interface Ingredient {
@@ -44,6 +50,7 @@ export interface RecipeListItem {
   image_url: string | null
   image_path: string | null
   status: RecipeStatus | string
+  duplicate_of_id: number | null
   scraped_at: string
 }
 
@@ -54,7 +61,7 @@ export interface Recipe extends RecipeListItem {
 }
 
 export interface RecipeStatusUpdate {
-  status: 'approved' | 'rejected'
+  status: 'pending' | 'approved' | 'rejected' | 'duplicate'
 }
 
 // Celery inspect() payloads carry many more fields than we care about

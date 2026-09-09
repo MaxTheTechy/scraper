@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from api.schemas.ingredient import IngredientRead
 
-RecipeStatus = Literal["pending", "approved", "rejected"]
+RecipeStatus = Literal["pending", "approved", "rejected", "duplicate"]
 
 
 class RecipeBase(BaseModel):
@@ -30,6 +30,7 @@ class RecipeListItem(RecipeBase):
     id: int
     site_id: int | None = None
     status: str
+    duplicate_of_id: int | None = None
     scraped_at: datetime
 
 
@@ -46,4 +47,4 @@ class RecipeSearchRequest(BaseModel):
 
 
 class RecipeStatusUpdate(BaseModel):
-    status: Literal["approved", "rejected"]
+    status: Literal["pending", "approved", "rejected", "duplicate"]

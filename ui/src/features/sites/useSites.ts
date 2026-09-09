@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createSite, fetchSites, triggerScrape } from '../../api/client'
-import type { SiteCreate } from '../../api/types'
+import { createSite, fetchSites, triggerScrape, updateSite } from '../../api/client'
+import type { SiteCreate, SiteUpdate } from '../../api/types'
 
 const SITES_KEY = ['sites'] as const
 
@@ -18,10 +18,21 @@ export function useCreateSiteMutation() {
   })
 }
 
+export function useUpdateSiteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: SiteUpdate }) => updateSite(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SITES_KEY })
+    },
+  })
+}
+
 export function useTriggerScrapeMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (siteId: number) => triggerScrape(siteId),
+    mutationFn: ({ siteId, limit }: { siteId: number; limit?: number }) =>
+      triggerScrape(siteId, limit),
     onSuccess: () => {
       // A newly queued job should show up in the scrape queue panel, and
       // last_scraped will eventually update once the job completes.

@@ -18,6 +18,7 @@ router = APIRouter(tags=["recipes"])
 def list_recipes(
     cuisine: str | None = Query(default=None),
     tag: str | None = Query(default=None),
+    status: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -27,6 +28,8 @@ def list_recipes(
         stmt = stmt.where(Recipe.cuisine == cuisine)
     if tag:
         stmt = stmt.where(Recipe.tags.any(tag))
+    if status:
+        stmt = stmt.where(Recipe.status == status)
     stmt = stmt.order_by(Recipe.id).offset(offset).limit(limit)
     return db.execute(stmt).scalars().all()
 
