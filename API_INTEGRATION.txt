@@ -1,0 +1,196 @@
+RECIPE SCRAPER PLATFORM — API INTEGRATION GUIDE
+=================================================
+For a client application that wants to read (and lightly manage) recipe data
+produced by this platform. Written from the live source in /opt/scraper as of
+2026-09-09.
+
+1. BASE URL & TRANSPORT
+------------------------
+- Production (via Nginx, on the recipe-dev-01 host): http://<host>/api/
+  Nginx proxies /api/ -> http://127.0.0.1:8000/ (strips the /api prefix).
+  Example: GET http://<host>/api/recipes  ->  FastAPI sees GET /recipes
+- Direct to FastAPI (if your app runs on the same box, or during dev):
+  http://127.0.0.1:8000/  (no /api prefix in this case)
+- Content type: application/json for all request/response bodies.
+- Scraped recipe images are served as static files, NOT through the API:
+  http://<host>/images/<filename>   (Nginx alias -> /data/images/ on disk)
+  A recipe's `image_path` field is the filename to append to that base.
+
+2. AUTHENTICATION
+------------------
+NONE. There is currently no auth layer (deferred deliberately — see
+HANDOFF.md / project spec section 10). Every endpoint below is open to
+anyone who can reach the host. Practical implications for your integration:
+- Do not expose this API directly to the public internet as-is.
+- If your app is external, put it behind your own auth/gateway, or restrict
+  network access (firewall / VPN / reverse-proxy allowlist) to the calling
+  app only.
+- CORS is currently locked to http://localhost:5173 (the dev UI) in
+  api/main.py. If your app calls this API directly from a browser on a
+  different origin, that request will be blocked by CORS until the
+  allow_origins list is updated — ask before changing this, since it's a
+  shared file. A server-to-server call (your backend calling this API) is
+  unaffected by CORS.
+
+3. CORE CONCEPTS
+------------------
+- Site: a scrape target (a domain) registered with the platform. Recipes
+  belong to a Site (site_id may be null for legacy/manual rows).
+- Recipe: the scraped result. Has a `status`:
+    "pending"    - scraped, not yet reviewed (default)
+    "approved"   - reviewed and accepted
+    "rejected"   - reviewed and rejected
+    "duplicate"  - auto-flagged as a likely duplicate of another recipe
+                   (see duplicate_of_id); can be manually reclassified back
+                   to any other status via the status-update endpoint.
+  Only pull status="approved" recipes if your app wants curated/clean data;
+  "pending" recipes have not been human-reviewed yet.
+- Ingredient: belongs to one recipe (name, quantity, unit, notes).
+- Scrape jobs run asynchronously via Celery — triggering a scrape returns
+  immediately with a task id; the recipes it produces show up later via the
+  normal GET /recipes endpoints.
+
+4. ENDPOINTS
+------------------
+
+GET /health
+  No params. Returns {"status": "ok"}. Use this for a liveness check.
+
+--- Recipes ---
+
+GET /recipes
+  Query params (all optional):
+    cuisine   string   exact match
+    tag       string   recipe must have this tag in its tags array
+    status    string   one of pending|approved|rejected|duplicate
+    limit     int      default 50, max 200
+    offset    int      default 0
+  Returns: list of RecipeListItem (summary shape, no ingredients):
+    {
+      "id": 12,
+      "site_id": 3,
+      "title": "...",
+      "cuisine": "romanian" | null,
+      "description": "..." | null,
+      "prep_time": 15 | null,       (minutes)
+      "cook_time": 30 | null,       (minutes)
+      "servings": 4 | null,
+      "method": ["step 1", "step 2", ...] | null,
+      "tags": ["dinner", "vegetarian"] | null,
+      "source_url": "https://original-site.com/recipe" | null,
+      "image_url": "https://original-site.com/img.jpg" | null,
+      "image_path": "12_abc123.jpg" | null,   <- filename under /images/
+      "status": "approved",
+      "duplicate_of_id": null,
+      "scraped_at": "2026-09-08T03:00:12.123456+00:00"
+    }
+  This is the endpoint to poll/paginate for bulk ingestion into another app.
+  Recommended integration pattern: page through with limit/offset, filtering
+  status=approved, and track the highest `id` or `scraped_at` you've already
+  ingested to fetch only new rows next time (there is no updated_at / delta
+  endpoint yet — recipes are effectively immutable once scraped, aside from
+  status changes).
+
+GET /recipes/{recipe_id}
+  Returns RecipeRead: same fields as above PLUS:
+    "ingredients": [
+      {"id": 1, "recipe_id": 12, "name": "flour", "quantity": 200.0,
+       "unit": "g", "notes": null},
+      ...
+    ]
+  404 if the id doesn't exist.
+
+POST /recipes/search
+  Body: {"q": "chicken", "limit": 50, "offset": 0}   (q is required, min 1 char)
+  Simple ILIKE substring match over title + description (not a ranked/full
+  text search). Returns list of RecipeListItem, same shape as GET /recipes.
+
+PATCH /recipes/{recipe_id}/status
+  Body: {"status": "approved"}   (one of pending|approved|rejected|duplicate)
+  Returns the updated RecipeRead. Use this if your app is the one doing
+  review/curation and needs to push a decision back.
+  NOTE: this endpoint only changes `status`. There is currently NO endpoint
+  to edit recipe content (title, ingredients, method, etc.) via the API —
+  that's a known gap, still open on this project's TODO list.
+
+--- Sites ---
+
+GET /sites
+  No params. Returns list of SiteRead:
+    {
+      "id": 3, "url": "https://retete.unica.ro", "name": "Unica",
+      "enabled": true, "last_scraped": "2026-09-08T03:00:00+00:00" | null,
+      "consecutive_failures": 0, "created_at": "..."
+    }
+
+POST /sites
+  Body: {"url": "https://example.com", "name": "Example"}  (name optional)
+  201 on success, returns SiteRead. 409 if that url is already registered.
+
+PATCH /sites/{site_id}
+  Body: any of {"enabled": true|false, "name": "..."}  — only send fields
+  you want to change.
+
+DELETE /sites/{site_id}
+  204 on success. 409 if the site already has recipes attached (no cascade
+  delete) — disable it instead (PATCH enabled=false) rather than deleting.
+
+--- Triggering scrapes ---
+
+POST /sites/{site_id}/scrape?limit=N
+  limit optional, 1-500, defaults to a manual-trigger default (10) if
+  omitted. Queues a Celery task and returns immediately:
+    {"task_id": "...", "site_id": 3, "status": "queued"}
+  202 status code. 404 if the site doesn't exist. Poll GET /recipes for
+  results — there is no per-job "done" webhook/callback.
+
+GET /scrape/jobs
+  No params. Returns currently active + queued Celery tasks:
+    {"jobs": [{"id": "...", "worker": "...", "state": "active"|"reserved",
+               ...task metadata...}]}
+  Useful for a "scrape in progress" indicator, not for recipe data itself.
+
+--- Ingredients ---
+
+GET /ingredients
+  Query params: q (substring filter, optional), limit (default 20, max 100)
+  Returns: flat list of distinct ingredient name strings, e.g.
+    ["flour", "flour, whole wheat", "flax seed", ...]
+  Useful for an autocomplete/typeahead if your app lets users search recipes
+  by ingredient name.
+
+5. ERROR SHAPE
+------------------
+Standard FastAPI/HTTPException JSON on errors:
+  {"detail": "Recipe not found"}
+with the matching HTTP status code (404, 409, 422 for validation errors
+from a malformed body — 422 bodies have FastAPI's standard
+{"detail": [{"loc": [...], "msg": "...", "type": "..."}]} shape).
+
+6. WORKED EXAMPLE (curl)
+------------------------
+# List approved recipes, newest first isn't supported — results are ordered
+# by id ascending, so page forward with offset.
+curl -s "http://<host>/api/recipes?status=approved&limit=50&offset=0"
+
+# Full detail incl. ingredients for one recipe
+curl -s "http://<host>/api/recipes/12"
+
+# Search
+curl -s -X POST "http://<host>/api/recipes/search" \
+  -H "Content-Type: application/json" \
+  -d '{"q": "ciorba", "limit": 20}'
+
+# Build the full image URL for a recipe with image_path "12_abc123.jpg"
+#   http://<host>/images/12_abc123.jpg
+
+7. THINGS TO CONFIRM WITH THE SCRAPER TEAM BEFORE GOING TO PRODUCTION
+------------------------------------------------------------------
+- No auth exists yet — decide how the two apps will trust each other
+  (network-level restriction vs. adding a token, which isn't implemented).
+- CORS allowlist (api/main.py) needs your app's origin added if you'll call
+  the API directly from a browser.
+- No webhook/event stream exists for "new recipe scraped" or "status
+  changed" — polling GET /recipes is the only option today.
+- No content-edit endpoint exists yet (title/ingredients/method are
+  read-only via the API once scraped, aside from `status`).
